@@ -1,21 +1,18 @@
-import React, {useRef, useState} from 'react';
+import React from 'react';
+import {Skia, Canvas, Path, Line, vec} from '@shopify/react-native-skia';
+import {SafeAreaView} from 'react-native';
 import {
-  Skia,
-  Canvas,
-  Path,
-  Circle,
-  Line,
-  vec,
-} from '@shopify/react-native-skia';
-import {PanResponder, SafeAreaView} from 'react-native';
+  GestureDetector,
+  GestureHandlerRootView,
+  Gesture,
+} from 'react-native-gesture-handler';
+import {useSharedValue, useDerivedValue} from 'react-native-reanimated';
 
 const SIZE = 256;
 const HIT_RADIUS = 28;
 
 type Pt = {x: number; y: number};
 
-// Identity mapping: (input=0, output=0) → (input=255, output=255)
-// In canvas coords: bottom-left (0, SIZE) to top-right (SIZE, 0)
 const INITIAL_POINTS: Pt[] = [
   {
     x: 0,
@@ -40,6 +37,7 @@ const INITIAL_POINTS: Pt[] = [
 ];
 
 function buildSplinePath(pts: Pt[]) {
+  'worklet';
   const p = Skia.Path.Make();
   if (pts.length < 2) {
     return p;
@@ -59,7 +57,7 @@ function buildSplinePath(pts: Pt[]) {
   return p;
 }
 
-// Static grid at 25%, 50%, 75%
+// Static — never changes
 const gridPath = (() => {
   const p = Skia.Path.Make();
   [0.25, 0.5, 0.75].forEach(t => {
@@ -73,104 +71,104 @@ const gridPath = (() => {
 })();
 
 function App() {
-  const [points, setPoints] = useState<Pt[]>(INITIAL_POINTS);
+  const points = useSharedValue<Pt[]>(INITIAL_POINTS);
+  const activeIdx = useSharedValue(-1);
+  const dragStart = useSharedValue<Pt>({x: 0, y: 0});
 
-  // Ref so PanResponder closures always see the latest points
-  const pointsRef = useRef(points);
-  pointsRef.current = points;
+  // Rebuilt on UI thread whenever points change — no JS bridge involved
+  const curvePath = useDerivedValue(() => {
+    'worklet';
+    return buildSplinePath(points.value);
+  });
 
-  const activeIdx = useRef(-1);
-  const dragStart = useRef<Pt>({x: 0, y: 0});
+  const dotsPath = useDerivedValue(() => {
+    'worklet';
+    const p = Skia.Path.Make();
+    points.value.forEach(pt => p.addCircle(pt.x, pt.y, 6));
+    return p;
+  });
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: evt => {
-        const {locationX, locationY} = evt.nativeEvent;
-        let bestIdx = -1;
-        let bestDist = HIT_RADIUS;
-        pointsRef.current.forEach((pt, i) => {
-          const d = Math.hypot(pt.x - locationX, pt.y - locationY);
-          if (d < bestDist) {
-            bestDist = d;
-            bestIdx = i;
-          }
-        });
-        activeIdx.current = bestIdx;
-        if (bestIdx >= 0) {
-          dragStart.current = {
-            ...pointsRef.current[bestIdx],
-          };
+  const panGesture = Gesture.Pan()
+    .onBegin(e => {
+      'worklet';
+      let bestIdx = -1;
+      let bestDist = HIT_RADIUS;
+      points.value.forEach((pt, i) => {
+        const d = Math.sqrt((pt.x - e.x) ** 2 + (pt.y - e.y) ** 2);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
         }
-      },
-      onPanResponderMove: (_, gs) => {
-        const i = activeIdx.current;
-        if (i < 0) {
-          return;
-        }
-        const clamp = (v: number) => Math.max(0, Math.min(SIZE, v));
-        setPoints(prev => {
-          const next = [...prev];
-          next[i] = {
-            x: clamp(dragStart.current.x + gs.dx),
-            y: clamp(dragStart.current.y + gs.dy),
-          };
-          return next;
-        });
-      },
-      onPanResponderRelease: () => {
-        activeIdx.current = -1;
-      },
-    }),
-  ).current;
+      });
+      activeIdx.value = bestIdx;
+      if (bestIdx >= 0) {
+        dragStart.value = {...points.value[bestIdx]};
+      }
+    })
+    .onUpdate(e => {
+      'worklet';
+      const i = activeIdx.value;
+      if (i < 0) {
+        return;
+      }
+      const clamp = (v: number) => Math.max(0, Math.min(SIZE, v));
+      const next = [...points.value];
+      next[i] = {
+        x: clamp(dragStart.value.x + e.translationX),
+        y: clamp(dragStart.value.y + e.translationY),
+      };
+      points.value = next;
+    })
+    .onEnd(() => {
+      'worklet';
+      activeIdx.value = -1;
+    });
 
-  const curvePath = buildSplinePath(points);
   console.log('Re rendering');
 
   return (
-    <SafeAreaView
+    <GestureHandlerRootView
       style={{
         flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
       }}>
-      <Canvas
+      <SafeAreaView
         style={{
-          width: SIZE,
-          height: SIZE,
-          backgroundColor: '#1a1a1a',
-        }}
-        {...panResponder.panHandlers}>
-        {/* Grid lines */}
-        <Path
-          path={gridPath}
-          color="rgba(255,255,255,0.08)"
-          style="stroke"
-          strokeWidth={0.5}
-        />
-        {/* Identity diagonal reference */}
-        <Line
-          p1={vec(0, SIZE)}
-          p2={vec(SIZE, 0)}
-          color="rgba(255,255,255,0.2)"
-          strokeWidth={1}
-        />
-        {/* Red channel curve */}
-        <Path
-          path={curvePath}
-          color="#ff3b3b"
-          style="stroke"
-          strokeWidth={2}
-          strokeCap="round"
-          strokeJoin="round"
-        />
-        {/* Draggable control point handles */}
-        {points.map((pt, i) => (
-          <Circle key={i} cx={pt.x} cy={pt.y} r={6} color="white" />
-        ))}
-      </Canvas>
-    </SafeAreaView>
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}>
+        <GestureDetector gesture={panGesture}>
+          <Canvas
+            style={{
+              width: SIZE,
+              height: SIZE,
+              backgroundColor: '#1a1a1a',
+            }}>
+            <Path
+              path={gridPath}
+              color="rgba(255,255,255,0.08)"
+              style="stroke"
+              strokeWidth={0.5}
+            />
+            <Line
+              p1={vec(0, SIZE)}
+              p2={vec(SIZE, 0)}
+              color="rgba(255,255,255,0.2)"
+              strokeWidth={1}
+            />
+            <Path
+              path={curvePath}
+              color="#ff3b3b"
+              style="stroke"
+              strokeWidth={2}
+              strokeCap="round"
+              strokeJoin="round"
+            />
+            <Path path={dotsPath} color="white" />
+          </Canvas>
+        </GestureDetector>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
