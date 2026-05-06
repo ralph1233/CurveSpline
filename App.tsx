@@ -1,6 +1,6 @@
 import React from 'react';
 import {Skia, Canvas, Path, Line, vec} from '@shopify/react-native-skia';
-import {SafeAreaView} from 'react-native';
+import {Dimensions, SafeAreaView} from 'react-native';
 import {
   GestureDetector,
   GestureHandlerRootView,
@@ -8,7 +8,7 @@ import {
 } from 'react-native-gesture-handler';
 import {useSharedValue, useDerivedValue} from 'react-native-reanimated';
 
-const SIZE = 256;
+const SIZE = Dimensions.get('window').width - 32;
 const HIT_RADIUS = 28;
 
 type Pt = {
