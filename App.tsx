@@ -195,24 +195,11 @@ function App() {
     );
   });
 
-  // Filled circles for draggable intermediate points
-  const movableDotsPath = useDerivedValue(() => {
+  // All control points — filled white
+  const dotsPath = useDerivedValue(() => {
     'worklet';
     const p = Skia.Path.Make();
-    const pts = points.value;
-    for (let i = 1; i < pts.length - 1; i++) {
-      p.addCircle(pts[i].x, pts[i].y, 6);
-    }
-    return p;
-  });
-
-  // Outlined circles for the locked endpoints
-  const endpointDotsPath = useDerivedValue(() => {
-    'worklet';
-    const p = Skia.Path.Make();
-    const pts = points.value;
-    p.addCircle(pts[0].x, pts[0].y, 6);
-    p.addCircle(pts[pts.length - 1].x, pts[pts.length - 1].y, 6);
+    points.value.forEach(pt => p.addCircle(pt.x, pt.y, 6));
     return p;
   });
 
@@ -221,11 +208,7 @@ function App() {
       'worklet';
       let bestIdx = -1;
       let bestDist = HIT_RADIUS;
-      const last = points.value.length - 1;
       points.value.forEach((pt, i) => {
-        if (i === 0 || i === last) {
-          return;
-        }
         const d = Math.sqrt((pt.x - e.x) ** 2 + (pt.y - e.y) ** 2);
         if (d < bestDist) {
           bestDist = d;
@@ -244,12 +227,22 @@ function App() {
         return;
       }
       const pts = points.value;
-      const minX = pts[i - 1].x;
-      const maxX = pts[i + 1].x;
+      const last = pts.length - 1;
+      const isFirst = i === 0;
+      const isLast = i === last;
+      const minX = isFirst ? 0 : pts[i - 1].x;
+      const maxX = isLast ? SIZE : pts[i + 1].x;
       const clampY = (v: number) => Math.max(0, Math.min(SIZE, v));
       const next = [...pts];
       next[i] = {
-        x: Math.max(minX, Math.min(maxX, dragStart.value.x + e.translationX)),
+        // Endpoints stay pinned to their x; only y moves
+        x:
+          isFirst || isLast
+            ? pts[i].x
+            : Math.max(
+                minX,
+                Math.min(maxX, dragStart.value.x + e.translationX),
+              ),
         y: clampY(dragStart.value.y + e.translationY),
       };
       points.value = next;
@@ -344,10 +337,8 @@ function App() {
               strokeCap="round"
               strokeJoin="round"
             />
-            {/* Draggable points — filled white */}
-            <Path path={movableDotsPath} color="white" />
-            {/* Fixed endpoints — outlined white */}
-            <Path path={endpointDotsPath} color="white" />
+            {/* All control points — filled white */}
+            <Path path={dotsPath} color="white" />
           </Canvas>
         </GestureDetector>
 
