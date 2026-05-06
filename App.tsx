@@ -10,33 +10,14 @@ import {useSharedValue, useDerivedValue} from 'react-native-reanimated';
 
 const SIZE = Dimensions.get('window').width - 32;
 const HIT_RADIUS = 28;
+const MAX_POINTS = 10; // 2 fixed endpoints + 8 user-placed
 
-type Pt = {
-  x: number;
-  y: number;
-};
+type Pt = {x: number; y: number};
 
+// Start with only the two locked endpoints
 const INITIAL_POINTS: Pt[] = [
-  {
-    x: 0,
-    y: SIZE,
-  },
-  {
-    x: SIZE * 0.25,
-    y: SIZE * 0.75,
-  },
-  {
-    x: SIZE * 0.5,
-    y: SIZE * 0.5,
-  },
-  {
-    x: SIZE * 0.75,
-    y: SIZE * 0.25,
-  },
-  {
-    x: SIZE,
-    y: 0,
-  },
+  {x: 0, y: SIZE},
+  {x: SIZE, y: 0},
 ];
 
 function buildSplinePath(pts: Pt[]) {
@@ -60,7 +41,7 @@ function buildSplinePath(pts: Pt[]) {
   return p;
 }
 
-// Static — never changes
+// Static grid at 25%, 50%, 75%
 const gridPath = (() => {
   const p = Skia.Path.Make();
   [0.25, 0.5, 0.75].forEach(t => {
@@ -78,16 +59,29 @@ function App() {
   const activeIdx = useSharedValue(-1);
   const dragStart = useSharedValue<Pt>({x: 0, y: 0});
 
-  // Rebuilt on UI thread whenever points change — no JS bridge involved
   const curvePath = useDerivedValue(() => {
     'worklet';
     return buildSplinePath(points.value);
   });
 
-  const dotsPath = useDerivedValue(() => {
+  // Filled circles for draggable intermediate points
+  const movableDotsPath = useDerivedValue(() => {
     'worklet';
     const p = Skia.Path.Make();
-    points.value.forEach(pt => p.addCircle(pt.x, pt.y, 6));
+    const pts = points.value;
+    for (let i = 1; i < pts.length - 1; i++) {
+      p.addCircle(pts[i].x, pts[i].y, 6);
+    }
+    return p;
+  });
+
+  // Outlined circles for the locked endpoints
+  const endpointDotsPath = useDerivedValue(() => {
+    'worklet';
+    const p = Skia.Path.Make();
+    const pts = points.value;
+    p.addCircle(pts[0].x, pts[0].y, 6);
+    p.addCircle(pts[pts.length - 1].x, pts[pts.length - 1].y, 6);
     return p;
   });
 
@@ -129,25 +123,48 @@ function App() {
       };
       points.value = next;
     })
-    .onEnd(() => {
+    .onFinalize(() => {
       'worklet';
       activeIdx.value = -1;
     });
 
+  const tapGesture = Gesture.Tap().onEnd(e => {
+    'worklet';
+    if (points.value.length >= MAX_POINTS) {
+      return;
+    }
+    // Don't add if tapping near an existing point
+    const nearExisting = points.value.some(
+      pt => Math.sqrt((pt.x - e.x) ** 2 + (pt.y - e.y) ** 2) < HIT_RADIUS,
+    );
+    if (nearExisting) {
+      return;
+    }
+    const newPt = {x: e.x, y: e.y};
+    const pts = points.value;
+    let insertAt = pts.length - 1;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].x > newPt.x) {
+        insertAt = i;
+        break;
+      }
+    }
+    points.value = [...pts.slice(0, insertAt), newPt, ...pts.slice(insertAt)];
+  });
+
+  const gesture = Gesture.Exclusive(panGesture, tapGesture);
+
   console.log('Re rendering');
 
   return (
-    <GestureHandlerRootView
-      style={{
-        flex: 1,
-      }}>
+    <GestureHandlerRootView style={{flex: 1}}>
       <SafeAreaView
         style={{
           flex: 1,
           justifyContent: 'center',
           alignItems: 'center',
         }}>
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={gesture}>
           <Canvas
             style={{
               width: SIZE,
@@ -174,7 +191,10 @@ function App() {
               strokeCap="round"
               strokeJoin="round"
             />
-            <Path path={dotsPath} color="white" />
+            {/* Draggable points — filled white */}
+            <Path path={movableDotsPath} color="white" />
+            {/* Fixed endpoints — outlined white */}
+            <Path path={endpointDotsPath} color="white" />
           </Canvas>
         </GestureDetector>
       </SafeAreaView>
