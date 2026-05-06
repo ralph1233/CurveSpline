@@ -11,7 +11,10 @@ import {useSharedValue, useDerivedValue} from 'react-native-reanimated';
 const SIZE = 256;
 const HIT_RADIUS = 28;
 
-type Pt = {x: number; y: number};
+type Pt = {
+  x: number;
+  y: number;
+};
 
 const INITIAL_POINTS: Pt[] = [
   {
@@ -93,7 +96,11 @@ function App() {
       'worklet';
       let bestIdx = -1;
       let bestDist = HIT_RADIUS;
+      const last = points.value.length - 1;
       points.value.forEach((pt, i) => {
+        if (i === 0 || i === last) {
+          return;
+        }
         const d = Math.sqrt((pt.x - e.x) ** 2 + (pt.y - e.y) ** 2);
         if (d < bestDist) {
           bestDist = d;
