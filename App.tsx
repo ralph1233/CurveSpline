@@ -118,11 +118,14 @@ function App() {
       if (i < 0) {
         return;
       }
-      const clamp = (v: number) => Math.max(0, Math.min(SIZE, v));
-      const next = [...points.value];
+      const pts = points.value;
+      const minX = pts[i - 1].x;
+      const maxX = pts[i + 1].x;
+      const clampY = (v: number) => Math.max(0, Math.min(SIZE, v));
+      const next = [...pts];
       next[i] = {
-        x: clamp(dragStart.value.x + e.translationX),
-        y: clamp(dragStart.value.y + e.translationY),
+        x: Math.max(minX, Math.min(maxX, dragStart.value.x + e.translationX)),
+        y: clampY(dragStart.value.y + e.translationY),
       };
       points.value = next;
     })
