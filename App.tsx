@@ -12,12 +12,21 @@ const SIZE = Dimensions.get('window').width - 32;
 const HIT_RADIUS = 28;
 const MAX_POINTS = 10; // 2 fixed endpoints + 8 user-placed
 
-type Pt = {x: number; y: number};
+type Pt = {
+  x: number;
+  y: number;
+};
 
 // Start with only the two locked endpoints
 const INITIAL_POINTS: Pt[] = [
-  {x: 0, y: SIZE},
-  {x: SIZE, y: 0},
+  {
+    x: 0,
+    y: SIZE,
+  },
+  {
+    x: SIZE,
+    y: 0,
+  },
 ];
 
 function buildSplinePath(pts: Pt[]) {
@@ -32,10 +41,11 @@ function buildSplinePath(pts: Pt[]) {
     const prev1 = pts[i - 1];
     const curr = pts[i];
     const next = pts[Math.min(i + 1, pts.length - 1)];
-    const cp1x = prev1.x + (curr.x - prev2.x) / 6;
-    const cp1y = prev1.y + (curr.y - prev2.y) / 6;
-    const cp2x = curr.x - (next.x - prev1.x) / 6;
-    const cp2y = curr.y - (next.y - prev1.y) / 6;
+    const clamp = (v: number) => Math.max(0, Math.min(SIZE, v));
+    const cp1x = clamp(prev1.x + (curr.x - prev2.x) / 6);
+    const cp1y = clamp(prev1.y + (curr.y - prev2.y) / 6);
+    const cp2x = clamp(curr.x - (next.x - prev1.x) / 6);
+    const cp2y = clamp(curr.y - (next.y - prev1.y) / 6);
     p.cubicTo(cp1x, cp1y, cp2x, cp2y, curr.x, curr.y);
   }
   return p;
@@ -156,6 +166,7 @@ function App() {
     'worklet';
     const last = points.value.length - 1;
     let hitIdx = -1;
+
     points.value.forEach((pt, i) => {
       if (i === 0 || i === last) {
         return;
@@ -164,6 +175,7 @@ function App() {
         hitIdx = i;
       }
     });
+
     if (hitIdx >= 0) {
       const pts = points.value;
       points.value = [...pts.slice(0, hitIdx), ...pts.slice(hitIdx + 1)];
@@ -173,7 +185,10 @@ function App() {
   const gesture = Gesture.Exclusive(panGesture, longPressGesture, tapGesture);
 
   return (
-    <GestureHandlerRootView style={{flex: 1}}>
+    <GestureHandlerRootView
+      style={{
+        flex: 1,
+      }}>
       <SafeAreaView
         style={{
           flex: 1,
