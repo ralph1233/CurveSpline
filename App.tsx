@@ -152,9 +152,25 @@ function App() {
     points.value = [...pts.slice(0, insertAt), newPt, ...pts.slice(insertAt)];
   });
 
-  const gesture = Gesture.Exclusive(panGesture, tapGesture);
+  const longPressGesture = Gesture.LongPress().onStart(e => {
+    'worklet';
+    const last = points.value.length - 1;
+    let hitIdx = -1;
+    points.value.forEach((pt, i) => {
+      if (i === 0 || i === last) {
+        return;
+      }
+      if (Math.sqrt((pt.x - e.x) ** 2 + (pt.y - e.y) ** 2) < HIT_RADIUS) {
+        hitIdx = i;
+      }
+    });
+    if (hitIdx >= 0) {
+      const pts = points.value;
+      points.value = [...pts.slice(0, hitIdx), ...pts.slice(hitIdx + 1)];
+    }
+  });
 
-  console.log('Re rendering');
+  const gesture = Gesture.Exclusive(panGesture, longPressGesture, tapGesture);
 
   return (
     <GestureHandlerRootView style={{flex: 1}}>
